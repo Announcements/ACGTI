@@ -1,3 +1,5 @@
+import charactersData from '../data/characters.json' with { type: 'json' }
+
 import type { CharacterMatch } from '../types/quiz'
 import type { AppLocale } from './types'
 
@@ -11,10 +13,10 @@ const hiddenCharacterSeriesI18n: LocalizedText = {
 }
 
 const hiddenCharacterNoteI18n: LocalizedText = {
-  'zh-CN': '你命中了{label}。ACGTI 不会直接公开其角色名，结果页仅保留角色代码、形象和气质解读。',
-  'zh-TW': '你命中了{label}。ACGTI 不會直接公開其角色名，結果頁僅保留角色代碼、形象與氣質解讀。',
-  en: 'You hit {label}. ACGTI keeps the actual character name masked and only shows the code, image, and personality reading.',
-  ja: '{label} に命中しました。ACGTIでは実際のキャラ名は伏せたまま、コードとビジュアル、解説のみを表示します。',
+  'zh-CN': '你抽中了隐藏角色{label}——她的真名暂时保密，结果页只留下角色代码、形象和气质解读。',
+  'zh-TW': '你抽中了隱藏角色{label}——她的真名暫時保密，結果頁只留下角色代碼、形象與氣質解讀。',
+  en: 'You unlocked the hidden character {label}. Her real name stays masked — the result only shows the code, image, and personality reading.',
+  ja: '隠しキャラの{label} を引きました。本当の名前は伏せたまま、コードとビジュアル、解説のみ表示されます。',
 }
 
 const hiddenCharacterTagsI18n: Record<AppLocale, string[]> = {
@@ -24,7 +26,12 @@ const hiddenCharacterTagsI18n: Record<AppLocale, string[]> = {
   ja: ['隠し結果', '低確率ヒット', '特殊な気配'],
 }
 
-const HIDDEN_CHARACTER_IDS = ['phrolova', 'kasugano-sora'] as const
+// 隐藏角色顺序表从角色数据派生（characters.json 的 hidden 字段是唯一事实源），
+// 新增隐藏角色时只需在数据里标记 hidden，这里不会再漏改导致静默退化。
+// 顺序取角色数据中的出现顺序，用于生成「隐藏角色 N」的编号。
+const HIDDEN_CHARACTER_IDS: string[] = (charactersData as Array<{ id: string; hidden?: boolean }>)
+  .filter((character) => character.hidden)
+  .map((character) => character.id)
 
 const hiddenCharacterLabelPrefixI18n: LocalizedText = {
   'zh-CN': '隐藏角色',
@@ -283,7 +290,7 @@ const characterNameI18n: Record<string, LocalizedText> = {
   'uika-nyubara': {
     'zh-CN': '祐天寺若麦 / Amoris',
     'zh-TW': '祐天寺若麥 / Amoris',
-    en: 'Nyubara Uika / Amoris',
+    en: 'Yutenji Nyamu / Amoris',
     ja: '祐天寺若麦 / Amoris',
   },
   'jia-ran': {
@@ -650,7 +657,7 @@ const characterNameI18n: Record<string, LocalizedText> = {
     'zh-CN': '艾莉',
     'zh-TW': '艾莉亞',
     en: 'Alya Kujou',
-    ja: '久世政近の隣の席のロシアン彼女',
+    ja: '九条アーリャ',
   },
   'artoria-pendragon': {
     'zh-CN': '阿尔托莉雅',
@@ -699,7 +706,19 @@ const characterNameI18n: Record<string, LocalizedText> = {
     'zh-TW': '02',
     en: 'Zero Two',
     ja: 'ゼロツー',
-  }
+  },
+  'okabe-rintaro': {
+    'zh-CN': '冈部伦太郎',
+    'zh-TW': '岡部倫太郎',
+    en: 'Rintaro Okabe',
+    ja: '岡部倫太郎',
+  },
+  'kochiya-sanae': {
+    'zh-CN': '东风谷早苗',
+    'zh-TW': '東風谷早苗',
+    en: 'Sanae Kochiya',
+    ja: '東風谷早苗',
+  },
 }
 
 const seriesI18n: Record<string, LocalizedText> = {
@@ -1127,7 +1146,7 @@ export function isHiddenCharacter(character: Pick<CharacterMatch, 'hidden'> | nu
 }
 
 export function getHiddenCharacterOrder(character: Pick<CharacterMatch, 'id'> | null | undefined) {
-  const index = character ? HIDDEN_CHARACTER_IDS.indexOf(character.id as (typeof HIDDEN_CHARACTER_IDS)[number]) : -1
+  const index = character ? HIDDEN_CHARACTER_IDS.indexOf(character.id) : -1
   return index >= 0 ? index + 1 : Number.MAX_SAFE_INTEGER
 }
 
@@ -1139,19 +1158,7 @@ export function getHiddenCharacterLabel(
   if (order === Number.MAX_SAFE_INTEGER) {
     return locale === 'en' ? 'Hidden Character' : hiddenCharacterLabelPrefixI18n[locale]
   }
-
-  if (locale === 'en') {
-    return `${hiddenCharacterLabelPrefixI18n[locale]}${order}`
-  }
-
   return `${hiddenCharacterLabelPrefixI18n[locale]}${order}`
-}
-
-export function getHiddenCharacterTitle(
-  locale: AppLocale,
-  character?: Pick<CharacterMatch, 'id'> | null,
-) {
-  return getHiddenCharacterLabel(character, locale)
 }
 
 export function getHiddenCharacterNote(
@@ -1171,14 +1178,14 @@ export function getLocalizedCharacterName(
   locale: AppLocale,
   options?: { revealHidden?: boolean },
 ) {
-  if (isHiddenCharacter(character as CharacterMatch) && !options?.revealHidden) {
+  if (isHiddenCharacter(character) && !options?.revealHidden) {
     return getHiddenCharacterLabel(character, locale)
   }
   return resolveLocalizedText(characterNameI18n, character.id, locale, character.name)
 }
 
 export function getLocalizedCharacterSeries(character: Pick<CharacterMatch, 'series' | 'hidden'>, locale: AppLocale) {
-  if (isHiddenCharacter(character as CharacterMatch)) {
+  if (isHiddenCharacter(character)) {
     return hiddenCharacterSeriesI18n[locale]
   }
   return resolveLocalizedText(seriesI18n, character.series, locale, character.series)

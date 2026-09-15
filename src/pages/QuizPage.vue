@@ -1,11 +1,11 @@
 <template>
   <div class="quiz-page-16p">
-    <div class="quiz-progress-rail" role="progressbar" :aria-valuenow="answeredCount" :aria-valuemax="questions.length" aria-label="Quiz progress">
+    <div class="quiz-progress-rail" role="progressbar" :aria-valuenow="answeredCount" :aria-valuemin="0" :aria-valuemax="questions.length" aria-label="答题进度">
       <div
         v-for="(answer, i) in state.answers"
         :key="i"
         class="quiz-progress-segment"
-        :class="{ answered: answer >= -3 && answer <= 3 }"
+        :class="{ answered: isAnsweredValue(answer) }"
       ></div>
     </div>
     <main class="quiz-main">
@@ -15,7 +15,7 @@
       </section>
 
       <section class="step-cards" aria-label="测试步骤">
-        <article v-for="(item, i) in tm<string[][]>('quiz.steps')" :key="i" class="step-card" :class="i === 0 ? 'step-teal' : i === 1 ? 'step-green' : 'step-purple'">
+        <article v-for="(item, i) in tm<string[][]>('quiz.steps') ?? []" :key="i" class="step-card" :class="i === 0 ? 'step-teal' : i === 1 ? 'step-green' : 'step-purple'">
           <span class="step-pill">{{ item[0] }}</span>
           <h3>{{ item[1] }}</h3>
           <p>{{ item[2] }}</p>
@@ -23,45 +23,54 @@
       </section>
 
       <section class="quiz-notice" aria-label="测试说明">
+        <p v-if="showResumeNotice" class="resume-notice">
+          {{ t('quiz.resumeNotice') }}
+          <button type="button" class="resume-restart" @click="restartQuiz">{{ t('quiz.resumeRestart') }}</button>
+        </p>
         <p>{{ t('quiz.noticeA', { count: questions.length }) }}</p>
         <p>{{ t('quiz.noticeB') }}</p>
         <p>{{ t('quiz.noticeC') }}</p>
       </section>
 
-      <section class="question-list" aria-label="测试题目">
+      <p v-if="questions.length === 0" class="quiz-loading">{{ t('quiz.loading') }}</p>
+
+      <section v-else class="question-list" aria-label="测试题目">
         <article
           v-for="(question, idx) in questions"
           :key="question.id"
           class="question-block"
-          :class="{ 
+          :class="{
             'needs-answer': pendingUnansweredIndex === idx,
-            'upcoming-dimmed': idx > firstUnansweredIndex && state.answers[idx] === undefined
+            'upcoming-dimmed': idx > firstUnansweredIndex && !isAnsweredValue(state.answers[idx])
           }"
           :ref="(el) => setQuestionRef(el, idx)"
           v-reveal
         >
-          <h2>{{ t('quiz.questions.' + idx, undefined, (question.text || question.prompt || t('quiz.missingQuestion'))) }}</h2>
+          <h2>{{ t('quiz.questions.' + idx, undefined, question.text) }}</h2>
 
           <div class="question-scale">
             <span class="agree-label">{{ t('quiz.agree') }}</span>
 
             <div class="scale-buttons" role="radiogroup" :aria-label="t('quiz.questionLabel', { index: idx + 1 })">
-              <button
-                v-for="option in scaleOptions"
-                :key="option.value"
-                type="button"
-                class="scale-btn"
-                :class="[
-                  option.sizeClass,
-                  option.side === 'agree' ? 'agree-ring' : option.side === 'disagree' ? 'disagree-ring' : 'neutral-ring',
-                  { selected: state.answers[idx] === option.value }
-                ]"
-                :aria-checked="state.answers[idx] === option.value"
-                :aria-label="option.label"
-                @click="onSelect(idx, option.value)"
-              >
-                <span class="checkmark" v-if="state.answers[idx] === option.value">✓</span>
-              </button>
+              <span v-for="(option, optIdx) in scaleOptions" :key="option.value" class="hit-pad">
+                <button
+                  type="button"
+                  class="scale-btn"
+                  :class="[
+                    option.sizeClass,
+                    option.side === 'agree' ? 'agree-ring' : option.side === 'disagree' ? 'disagree-ring' : 'neutral-ring',
+                    { selected: state.answers[idx] === option.value }
+                  ]"
+                  role="radio"
+                  :aria-checked="state.answers[idx] === option.value"
+                  :tabindex="state.answers[idx] === option.value || (!isAnsweredValue(state.answers[idx]) && optIdx === 0) ? 0 : -1"
+                  :aria-label="option.label"
+                  @click="onSelect(idx, option.value)"
+                  @keydown="onScaleKeydown($event, idx, optIdx)"
+                >
+                  <span class="checkmark" v-if="state.answers[idx] === option.value">✓</span>
+                </button>
+              </span>
             </div>
 
             <span class="disagree-label">{{ t('quiz.disagree') }}</span>
@@ -92,8 +101,8 @@
       <div class="quiz-footer-inner">
         <div class="share-count">{{ t('quiz.footerCount', { count: questions.length }) }}</div>
         <div class="footer-links">
-          <RouterLink to="/">{{ tm<Record<string, string>>('app.footer.social').home }}</RouterLink>
-          <RouterLink to="/about">{{ tm<Record<string, string>>('app.footer.social').about }}</RouterLink>
+          <RouterLink to="/">{{ t('app.footer.social.home') }}</RouterLink>
+          <RouterLink to="/about">{{ t('app.footer.social.about') }}</RouterLink>
           <RouterLink to="/result">{{ t('app.nav.result') }}</RouterLink>
           <span>{{ t('quiz.footerLocal') }}</span>
         </div>
@@ -104,7 +113,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, ref, computed } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, computed } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -112,9 +121,10 @@ import { useQuiz } from '../composables/useQuiz'
 import { useI18n } from '../i18n'
 import { useSeo } from '../composables/useSeo'
 
+const { t: seoQuizT } = useI18n()
 useSeo({
-  title: '开始 ACGTI 测试 - ACG Type Indicator | 二次元角色原型测试',
-  description: '进入 ACGTI 官网的测试页，回答 39 道情境式问题，获得唯一命中的角色代码、MBTI 维度倾向与二次元角色原型解析。免费、无需注册、纯前端运行。',
+  title: computed(() => seoQuizT('seo.quizTitle')),
+  description: computed(() => seoQuizT('seo.quizDesc')),
   path: '/quiz',
 })
 
@@ -134,24 +144,49 @@ const {
   answeredCount,
   isComplete,
   firstUnansweredIndex,
+  isAnsweredValue,
   selectOptionAt,
+  resetQuiz,
   finalizeQuiz,
   ensureData,
 } = useQuiz()
 const { t, tm } = useI18n()
 
-// 进入答题页时才加载题库数据
-onMounted(() => {
-  void ensureData()
+const showResumeNotice = ref(false)
+
+// 进入答题页时才加载题库数据；若本地存有未完成进度则一并恢复
+onMounted(async () => {
+  await ensureData()
+  showResumeNotice.value = answeredCount.value > 0 && !isComplete.value
+  window.addEventListener('beforeunload', handleBeforeUnload)
+  window.addEventListener('keydown', handleNumberKeydown)
 })
 
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+  window.removeEventListener('keydown', handleNumberKeydown)
+})
+
+// 进度虽已持久化，仍保留浏览器原生确认，拦截误触刷新/关闭
+function handleBeforeUnload(event: BeforeUnloadEvent) {
+  if (answeredCount.value > 0 && !isComplete.value) {
+    event.preventDefault()
+    event.returnValue = ''
+  }
+}
+
+function restartQuiz() {
+  resetQuiz()
+  showResumeNotice.value = false
+}
 
 const questionRefs = ref<HTMLElement[]>([])
 const pendingUnansweredIndex = ref<number | null>(null)
 let unansweredHighlightTimer: ReturnType<typeof setTimeout> | null = null
 
 const scaleOptions = computed<ScaleOption[]>(() => {
-  const scaleTitles = tm<string[]>('quiz.scale')
+  // tm 在语言包缺失该键时可能返回空值，兜底为空数组避免取到 undefined 标签
+  const scaleTitles = tm<string[]>('quiz.scale') ?? []
   return [
     { value: 3, label: scaleTitles[0], side: 'agree', sizeClass: 'size-xl' },
     { value: 2, label: scaleTitles[1], side: 'agree', sizeClass: 'size-lg' },
@@ -163,19 +198,56 @@ const scaleOptions = computed<ScaleOption[]>(() => {
   ]
 })
 
+// 数字键 1-7 快捷答题（16personalities 同款体验）：
+// 映射到「当前题」（第一道未作答的题目）的 7 档刻度，行为与点击按钮完全一致
+function handleNumberKeydown(event: KeyboardEvent) {
+  // 焦点在输入类控件或可编辑区域时不拦截，避免干扰正常输入
+  const target = event.target instanceof HTMLElement ? event.target : null
+  if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+
+  const num = Number.parseInt(event.key, 10)
+  if (!Number.isInteger(num) || num < 1 || num > scaleOptions.value.length) return
+
+  // 全部答完时（firstUnansweredIndex 为 -1）没有「当前题」，直接忽略
+  const questionIndex = firstUnansweredIndex.value
+  if (questionIndex < 0 || questionIndex >= questions.value.length) return
+
+  event.preventDefault()
+  const option = scaleOptions.value[num - 1]
+  if (option) onSelect(questionIndex, option.value)
+}
+
 function onSelect(questionIndex: number, value: number) {
   selectOptionAt(questionIndex, value)
 }
 
-function setQuestionRef(element: Element | ComponentPublicInstance | null, index: number) {
-  const target = element instanceof HTMLElement
-    ? element
-    : element && '$el' in element && element.$el instanceof HTMLElement
-      ? element.$el
-      : null
+// 方向键在 7 档圆点间移动并直接选中（roving tabindex 的键盘交互）
+function onScaleKeydown(event: KeyboardEvent, questionIndex: number, optionIndex: number) {
+  const delta = event.key === 'ArrowRight' || event.key === 'ArrowUp'
+    ? 1
+    : event.key === 'ArrowLeft' || event.key === 'ArrowDown'
+      ? -1
+      : 0
+  if (delta === 0) return
 
-  if (!target) return
-  questionRefs.value[index] = target
+  event.preventDefault()
+  const nextIndex = Math.min(Math.max(optionIndex + delta, 0), scaleOptions.value.length - 1)
+  const option = scaleOptions.value[nextIndex]
+  if (!option) return
+
+  onSelect(questionIndex, option.value)
+  void nextTick(() => {
+    const group = questionRefs.value[questionIndex]?.querySelector('.scale-buttons')
+    const buttons = group ? Array.from(group.querySelectorAll<HTMLButtonElement>('button.scale-btn')) : []
+    buttons[nextIndex]?.focus()
+  })
+}
+
+function setQuestionRef(element: Element | ComponentPublicInstance | null, index: number) {
+  // ref 绑定在原生 <article> 上，组件实例分支仅为满足模板 ref 的类型签名
+  if (element instanceof HTMLElement) {
+    questionRefs.value[index] = element
+  }
 }
 
 async function jumpToUnansweredQuestion(index: number) {
@@ -267,10 +339,11 @@ async function submitQuiz() {
 }
 
 .hero p {
-  margin: 10px 0 0;
-  font-size: 14px;
-  letter-spacing: 0.12em;
-  color: #8191a3;
+  margin: 8px 0 0;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: #6b7a8a;
+  font-weight: 600;
 }
 
 .step-cards {
@@ -282,10 +355,9 @@ async function submitQuiz() {
 
 .step-card {
   background: #ffffff;
-  border: 1px solid #edf1f5;
-  border-radius: 14px;
-  padding: 20px;
-  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.05);
+  border: 1px solid #e3e8ee;
+  border-radius: 12px;
+  padding: 18px 20px;
 }
 
 .step-card h3 {
@@ -312,27 +384,27 @@ async function submitQuiz() {
 }
 
 .step-teal {
-  border-top: 4px solid #33a474;
+  border-top: 3px solid #3a7a60;
 }
 
 .step-teal .step-pill {
-  background: #33a474;
+  background: #3a7a60;
 }
 
 .step-green {
-  border-top: 4px solid #55c391;
+  border-top: 3px solid #4a9a76;
 }
 
 .step-green .step-pill {
-  background: #55c391;
+  background: #4a9a76;
 }
 
 .step-purple {
-  border-top: 4px solid #88619a;
+  border-top: 3px solid #7a6a8a;
 }
 
 .step-purple .step-pill {
-  background: #88619a;
+  background: #7a6a8a;
 }
 
 .question-list {
@@ -345,10 +417,10 @@ async function submitQuiz() {
 }
 
 .question-block {
-  padding: 36px 18px;
-  border-bottom: 1px solid #f1f4f8;
+  padding: 32px 18px;
+  border-bottom: 1px solid #eef2f4;
   scroll-margin-top: 24px;
-  transition: opacity 0.5s ease, filter 0.5s ease, transform 0.5s ease, background-color 0.22s ease, box-shadow 0.22s ease;
+  transition: background-color 0.2s ease;
 }
 
 .question-block.upcoming-dimmed {
@@ -368,7 +440,6 @@ async function submitQuiz() {
 
 .question-block.needs-answer {
   background: #f6fbf8;
-  box-shadow: inset 4px 0 0 #33a474;
 }
 
 .question-block h2 {
@@ -411,6 +482,40 @@ async function submitQuiz() {
   align-items: center;
   justify-content: center;
   gap: 14px;
+}
+
+/* 触摸热区：视觉圆较小，但命中范围不小于 44px */
+.hit-pad {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.quiz-loading {
+  text-align: center;
+  color: #6d7c8a;
+  padding: 48px 0;
+}
+
+.resume-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.resume-restart {
+  border: 1px solid #33a474;
+  background: transparent;
+  color: #33a474;
+  border-radius: 999px;
+  padding: 2px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .scale-btn {
@@ -509,10 +614,10 @@ async function submitQuiz() {
 .result-form-card {
   max-width: 880px;
   margin: 28px auto 0;
-  padding: 28px 20px;
-  border: 1px solid #edf1f5;
-  border-radius: 14px;
-  box-shadow: 0 10px 30px rgba(17, 24, 39, 0.05);
+  padding: 22px 18px;
+  border: 1px solid #e3e8ee;
+  border-radius: 12px;
+  background: #ffffff;
 }
 
 .quiz-notice {
@@ -548,13 +653,18 @@ async function submitQuiz() {
 }
 
 .submit-btn {
-  border: none;
+  border: 1px solid #2d9168;
   border-radius: 999px;
-  padding: 12px 28px;
+  padding: 11px 26px;
   color: #ffffff;
-  background: #88619a;
+  background: #33a474;
   font-weight: 700;
   cursor: pointer;
+}
+
+.submit-btn:hover {
+  background: #2f7a5c;
+  border-color: #285f4a;
 }
 
 .quiz-footer {

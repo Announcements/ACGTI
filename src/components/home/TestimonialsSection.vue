@@ -1,44 +1,87 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { useI18n } from '../../i18n'
+import { useI18n, type AppLocale } from '../../i18n'
 
-const { t, tm } = useI18n()
+const { locale, t, tm } = useI18n()
 
-const testimonialBase = [
+// 评价引用的四个原型（id 对应 src/data/archetypes.json）
+type TestimonialArchetypeId = 'shadow-strategist' | 'oathbound-captain' | 'moonlit-guardian' | 'chaos-spark'
+
+// 匿名社区昵称：按语言本地化的轻口味署名，不做真人感伪装
+const NICKNAMES: Record<AppLocale, string[]> = {
+  'zh-CN': ['某个路过的 I 人', '拉全群来测的 E 人', '深夜补测试的旅人', '晒角色代码的群友'],
+  'zh-TW': ['某個路過的 I 人', '拉全群來測的 E 人', '深夜補測試的旅人', '曬角色代碼的群友'],
+  'en': ['passing introvert', 'the one who dragged the group in', 'night-shift tester', 'group-chat showoff'],
+  'ja': ['通りすがりのI型', 'グループを巻き込んだE型', '深夜に受験した旅人', 'キャラコード自慢の住人'],
+}
+
+// 角色标签用 ACGTI 自己的原型体系，替代 16personalities 的官方角色名（名称按语言本地化）
+const ARCHETYPE_LABELS: Record<AppLocale, Record<TestimonialArchetypeId, string>> = {
+  'zh-CN': {
+    'shadow-strategist': '影面策士',
+    'oathbound-captain': '誓约队长',
+    'moonlit-guardian': '月下守护者',
+    'chaos-spark': '混沌火花',
+  },
+  'zh-TW': {
+    'shadow-strategist': '影面策士',
+    'oathbound-captain': '誓約隊長',
+    'moonlit-guardian': '月下守護者',
+    'chaos-spark': '混沌火花',
+  },
+  'en': {
+    'shadow-strategist': 'Shadow Strategist',
+    'oathbound-captain': 'Oathbound Captain',
+    'moonlit-guardian': 'Moonlit Guardian',
+    'chaos-spark': 'Chaos Spark',
+  },
+  'ja': {
+    'shadow-strategist': '影の策士',
+    'oathbound-captain': '誓約の隊長',
+    'moonlit-guardian': '月夜の守護者',
+    'chaos-spark': '混沌の火花',
+  },
+}
+
+// 视觉字段（配色/头像渐变）保持原有卡片风格，仅替换署名与角色标签
+const testimonialBase: Array<{
+  archetypeId: TestimonialArchetypeId
+  type: string
+  color: string
+  avatar: string
+}> = [
   {
-    name: "Benny",
-    role: "ARCHITECT",
-    type: "INTJ",
-    color: "#8a609d",
-    avatar: "linear-gradient(135deg, #f7b2b2 0%, #f3d3d3 100%)",
+    archetypeId: 'shadow-strategist',
+    type: 'INTJ',
+    color: '#6b5a7f',
+    avatar: '#ede8f0',
   },
   {
-    name: "Nicole",
-    role: "ADVOCATE",
-    type: "INFJ",
-    color: "#3ba17c",
-    avatar: "linear-gradient(135deg, #b8d7ff 0%, #d6e6ff 100%)",
+    archetypeId: 'oathbound-captain',
+    type: 'ENTJ',
+    color: '#2f6e55',
+    avatar: '#e6efec',
   },
   {
-    name: "Caroline",
-    role: "DEFENDER",
-    type: "ISFJ",
-    color: "#4298b4",
-    avatar: "linear-gradient(135deg, #bdebc9 0%, #dff5e6 100%)",
+    archetypeId: 'moonlit-guardian',
+    type: 'INFJ',
+    color: '#2f6a80',
+    avatar: '#e6eef2',
   },
   {
-    name: "Marta",
-    role: "COMMANDER",
-    type: "ENTJ",
-    color: "#8a609d",
-    avatar: "linear-gradient(135deg, #ffe6a8 0%, #fff1cb 100%)",
+    archetypeId: 'chaos-spark',
+    type: 'ENTP',
+    color: '#7a5f3a',
+    avatar: '#faf3e0',
   },
 ]
 
 const testimonials = computed(() =>
   testimonialBase.map((item, index) => ({
     ...item,
+    name: NICKNAMES[locale.value][index] ?? '',
+    role: ARCHETYPE_LABELS[locale.value][item.archetypeId],
     quote: tm<string[]>('home.testimonials')[index] ?? '',
   })),
 )
@@ -52,7 +95,7 @@ const testimonials = computed(() =>
       <h2 class="testimonial-title">{{ t('home.testimonialsTitle') }}</h2>
 
       <div class="testimonial-track">
-        <article v-for="item in testimonials" :key="item.name" class="testimonial-card">
+        <article v-for="item in testimonials" :key="item.archetypeId" class="testimonial-card">
           <div class="card-top" :style="{ backgroundColor: item.color }"></div>
           <div class="card-body">
             <div class="profile-row">
@@ -77,41 +120,34 @@ const testimonials = computed(() =>
 }
 
 .testimonials {
-  padding: 5.5rem 0;
+  padding: 4rem 0;
   position: relative;
+  background: #f8f9fa;
+  border-top: 1px solid #eef2f4;
+  border-bottom: 1px solid #eef2f4;
 }
 
 .quote-badge {
-  position: absolute;
-  top: -20px;
-  left: 50%;
-  transform: translateX(-50%) rotate(12deg);
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  background: #e5b540;
-  color: #fff;
-  font-size: 3rem;
-  font-family: Georgia, serif;
-  line-height: 1.3;
-  text-align: center;
-  box-shadow: 0 10px 24px rgba(131, 96, 17, 0.28);
+  display: none;
 }
 
 .testimonial-tag {
   text-align: center;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #e5b540;
-  font-weight: 800;
-  font-size: 0.75rem;
-  margin: 1.6rem 0 0;
+  color: #6b7a86;
+  font-weight: 700;
+  font-size: 0.74rem;
+  margin: 0;
 }
 
 .testimonial-title {
   text-align: center;
-  margin: 0.6rem 0 2.6rem;
-  font-size: clamp(1.9rem, 4.5vw, 2.8rem);
+  margin: 0.5rem 0 2rem;
+  font-size: clamp(1.6rem, 3.8vw, 2.2rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #1f2a32;
 }
 
 .testimonial-track {
@@ -125,15 +161,15 @@ const testimonials = computed(() =>
 }
 
 .testimonial-card {
-  border-radius: 16px;
+  border-radius: 12px;
   background: #fff;
-  box-shadow: 0 10px 30px rgba(32, 38, 46, 0.1);
+  border: 1px solid #e3e8ee;
   overflow: hidden;
   scroll-snap-align: center;
 }
 
 .card-top {
-  height: 6px;
+  height: 3px;
 }
 
 .card-body {
@@ -147,9 +183,10 @@ const testimonials = computed(() =>
 }
 
 .avatar {
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   border-radius: 999px;
+  border: 1px solid #dde5ea;
 }
 
 .profile-row h3 {
@@ -164,10 +201,10 @@ const testimonials = computed(() =>
 }
 
 .quote {
-  margin: 1rem 0 0;
-  color: #555;
+  margin: 0.85rem 0 0;
+  color: #4a5560;
   line-height: 1.7;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
 }
 
 @media (max-width: 768px) {

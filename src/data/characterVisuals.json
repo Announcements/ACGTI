@@ -205,8 +205,8 @@
     "accent": "#F3C043"
   },
   "inaba-meguru": {
-    "image": "/images/characters/美咕噜.png",
-    "thumb": "/images/characters/thumbs/美咕噜.png",
+    "image": "/images/characters/美咕噜.webp",
+    "thumb": "/images/characters/thumbs/美咕噜.webp",
     "accent": "#f08a43"
   },
   "izumi-konata": {
@@ -268,6 +268,11 @@
     "image": "/images/characters/北白川玉子.webp",
     "thumb": "/images/characters/thumbs/北白川玉子.webp",
     "accent": "#EF838D"
+  },
+  "kochiya-sanae": {
+    "image": "/images/characters/东风谷早苗.webp",
+    "thumb": "/images/characters/thumbs/东风谷早苗.webp",
+    "accent": "#72C672"
   },
   "kousaka-kirino": {
     "image": "/images/characters/高坂桐乃.webp",
@@ -368,6 +373,11 @@
     "image": "/images/characters/温水佳树.webp",
     "thumb": "/images/characters/thumbs/温水佳树.webp",
     "accent": "#d8b65a"
+  },
+  "okabe-rintaro": {
+    "image": "/images/characters/冈部伦太郎.webp",
+    "thumb": "/images/characters/thumbs/冈部伦太郎.webp",
+    "accent": "#FB6F0A"
   },
   "oyama-mahiro": {
     "image": "/images/characters/绪山真寻.webp",

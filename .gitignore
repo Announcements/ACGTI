@@ -33,6 +33,9 @@ out/
 
 # Wrangler local state
 .wrangler/
+# 脚本生成的临时产物统一放 .wrangler/tmp/（如 prewarm SQL 中转文件），显式忽略防回归
+.wrangler/tmp/
+.wrangler-pages-func-build/
 
 # Environment files
 .env
@@ -68,14 +71,37 @@ analysis/*.sqlite3
 analysis/*.csv
 analysis/calibration-round*.md
 
-# Misc assets / archives
-*.png
+# D1 database backups (full exports, do not commit)
+d1-backups/
+
+# Misc assets / archives（仓库根目录的零散 PNG 不入仓；角色图片等素材请放 assets/ 或 public/ 后显式添加）
+/*.png
+scripts/e2e-*.png
 *.zip
 *.tar
 *.gz
 repomix-output.xml
 
-# Internal docs
+# Internal docs（技术文档与运维文档，仅本地留存，不进入版本控制；
+# docs/audit/ 审计交付物同属本地留存，不再随仓分发）
 DEBUG_SUBMIT_400.md
-docs/排行榜优化方案.md
-docs/internal-ops.md
+docs/*
+public/api/openapi.yaml
+
+# 本地垃圾桶（移入 .trash 的丢弃物不进版本控制；仓库根若建 .trash 同样忽略）
+.trash/
+
+# 本地分析报告与中间产物已在上方忽略，补充显式规则防止误提交
+analysis/calibration-*.md
+
+# Legacy root scripts / data dumps (early prototypes, superseded by scripts/)
+/generateData.ts
+/generateQuestions.ts
+/questions_dump.json
+/fix.ps1
+
+# 校准用反馈数据导出（含真实用户作答衍生数据，体积大且不应再入库；本地保留）
+scripts/tf_feedback_data.json
+scripts/tf_feedback_data*.json
+# 本地备份脚本不入库
+scripts/backups/

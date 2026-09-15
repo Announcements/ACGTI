@@ -31,7 +31,8 @@ export async function fetchResultStats(
 }
 // 使用 sendBeacon 优先，fallback 到 fetch keepalive
 
-const APP_VERSION = '0.3.5-jp-fix'
+// 版本号由 vite define 从 package.json 注入，保证与发版一致
+const APP_VERSION = __APP_VERSION__
 
 export interface SubmitPayload {
   submissionId: string
@@ -69,38 +70,25 @@ export interface FeedbackPayload {
 export function reportResultInBackground(payload: Omit<SubmitPayload, 'appVersion'>) {
   const body = JSON.stringify({ ...payload, appVersion: APP_VERSION })
 
-  console.log('📤 Sending submit payload:', {
-    submissionId: payload.submissionId,
-    archetypeCode: payload.archetypeCode,
-    characterCode: payload.characterCode,
-    durationMs: payload.durationMs ?? null,
-    appVersion: APP_VERSION,
-  })
-
-  setTimeout(() => {
-    try {
-      if (navigator.sendBeacon) {
-        const blob = new Blob([body], { type: 'application/json' })
-        const queued = navigator.sendBeacon('/api/submit', blob)
-        console.log('📨 sendBeacon queued:', queued)
-        if (queued) return
-      }
-
-      // fallback
-      fetch('/api/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        keepalive: true,
-      }).then(res => {
-        console.log('📡 /api/submit response:', res.status, res.statusText)
-      }).catch((err) => {
-        console.error('❌ /api/submit error:', err)
-      })
-    } catch (err) {
-      console.error('❌ reportResultInBackground error:', err)
+  try {
+    // sendBeacon 本身就是异步非阻塞的，直接同步调用
+    if (navigator.sendBeacon) {
+      const blob = new Blob([body], { type: 'application/json' })
+      if (navigator.sendBeacon('/api/submit', blob)) return
     }
-  }, 0)
+
+    // fallback
+    fetch('/api/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      keepalive: true,
+    }).catch((err) => {
+      console.error('❌ /api/submit error:', err)
+    })
+  } catch (err) {
+    console.error('❌ reportResultInBackground error:', err)
+  }
 }
 
 /**

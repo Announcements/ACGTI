@@ -1,40 +1,22 @@
-<script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-
+<script lang="ts">
 import archetypesData from '../data/archetypes.json'
 import charactersData from '../data/characters.json'
-import characterVisualsData from '../data/characterVisuals.json'
-import { useI18n } from '../i18n'
-import { getLocalizedCharacterName, getLocalizedCharacterSeries } from '../i18n/characters'
-import { resolvePublicAsset } from '../utils/characterVisuals'
-import { useSeo } from '../composables/useSeo'
 
-useSeo({
-  title: 'ACGTI 全局统计 - 测试数据概览',
-  description: '查看 ACGTI 官网的全局测试统计数据，包括各人格类型分布、热门角色命中排行和测试参与趋势。',
-  path: '/stats',
-})
+// --- 静态查找表 ---
+// 两份 JSON 是纯静态数据，与响应式无关，直接建模块级 Map，
+// 避免每个组件实例化时重复构建。
 
-const { t, locale } = useI18n()
-
-// --- Archetype lookup ---
 interface ArchetypeDef {
   id: string
   name: string
   subtitle: string
   accent: string
 }
-const archetypeMap = computed(() => {
-  const map = new Map<string, ArchetypeDef>()
-  for (const a of archetypesData as ArchetypeDef[]) {
-    map.set(a.id, a)
-  }
-  return map
-})
 
-// --- Character visual lookup ---
-type CharacterVisual = { thumb?: string; accent: string }
-const visualMap = characterVisualsData as Record<string, CharacterVisual>
+const archetypeMap = new Map<string, ArchetypeDef>()
+for (const a of archetypesData as ArchetypeDef[]) {
+  archetypeMap.set(a.id, a)
+}
 
 interface CharacterDef {
   id: string
@@ -44,13 +26,33 @@ interface CharacterDef {
   hidden?: boolean
 }
 
-const characterCodeMap = computed(() => {
-  const map = new Map<string, CharacterDef>()
-  for (const item of charactersData as CharacterDef[]) {
-    map.set(item.code.toUpperCase(), item)
-  }
-  return map
+const characterCodeMap = new Map<string, CharacterDef>()
+for (const item of charactersData as CharacterDef[]) {
+  characterCodeMap.set(item.code.toUpperCase(), item)
+}
+</script>
+
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+
+import characterVisualsData from '../data/characterVisuals.json'
+import { useI18n } from '../i18n'
+import { getLocalizedCharacterName, getLocalizedCharacterSeries } from '../i18n/characters'
+import { resolvePublicAsset } from '../utils/characterVisuals'
+import { useSeo } from '../composables/useSeo'
+
+const { t: seoStatsT } = useI18n()
+useSeo({
+  title: computed(() => seoStatsT('seo.statsTitle')),
+  description: computed(() => seoStatsT('seo.statsDesc')),
+  path: '/stats',
 })
+
+const { t, locale } = useI18n()
+
+// --- Character visual lookup ---
+type CharacterVisual = { thumb?: string; accent: string }
+const visualMap = characterVisualsData as Record<string, CharacterVisual>
 
 // --- Stats data ---
 interface OverviewData {
@@ -72,16 +74,39 @@ const updatedAt = ref<string | null>(null)
 const loadError = ref<string | null>(null)
 
 function getLocaleLoadErrorMessage(): string {
-  if (locale.value === 'zh-TW') {
-    return '統計資料目前無法載入。若在本機開發，請使用 wrangler pages dev 啟動，才能訪問 /api/stats/*。'
+  // 主文案与通用提示走 i18n 键；开发环境再追加点对点的本地提示，仅本地可见
+  const devHint = import.meta.env.DEV
+    ? '（本地开发请使用 wrangler pages dev 启动，才能访问 /api/stats/*。）'
+    : ''
+  return `${t('stats.loadError')}${t('stats.loadErrorHint')}${devHint}`
+}
+
+async function retryLoad() {
+  loadError.value = null
+  loading.value = true
+  try {
+    await loadStats()
+  } finally {
+    loading.value = false
   }
-  if (locale.value === 'en') {
-    return 'Stats data is currently unavailable. In local development, please run with wrangler pages dev so /api/stats/* works.'
+}
+
+async function loadStats() {
+  try {
+    const [overviewRes, archetypesRes, charactersRes] = await Promise.all([
+      fetchStatsJson('/api/stats/overview'),
+      fetchStatsJson('/api/stats/archetypes'),
+      fetchStatsJson('/api/stats/characters'),
+    ])
+
+    if (overviewRes.data) overview.value = overviewRes.data
+    if (archetypesRes.data?.items) archetypes.value = archetypesRes.data.items
+    if (charactersRes.data?.items) characters.value = charactersRes.data.items
+    updatedAt.value = overviewRes.updatedAt ?? archetypesRes.updatedAt ?? charactersRes.updatedAt ?? null
+  } catch (err) {
+    console.error('Failed to load stats:', err)
+    loadError.value = getLocaleLoadErrorMessage()
   }
-  if (locale.value === 'ja') {
-    return '統計データを読み込めません。ローカル開発では wrangler pages dev で起動して /api/stats/* にアクセスしてください。'
-  }
-  return '统计数据暂时无法加载。本地开发请使用 wrangler pages dev 启动，才能访问 /api/stats/*。'
 }
 
 async function fetchStatsJson(url: string) {
@@ -96,7 +121,7 @@ async function fetchStatsJson(url: string) {
 }
 
 function getCharacterFromCode(code: string): CharacterDef | null {
-  return characterCodeMap.value.get(code.toUpperCase()) ?? null
+  return characterCodeMap.get(code.toUpperCase()) ?? null
 }
 
 function getCharacterName(code: string): string {
@@ -125,8 +150,8 @@ function getCharacterAccent(code: string): string {
 }
 
 function formatNumber(n: number): string {
-  if (n >= 10000) return (n / 10000).toFixed(1) + 'W'
-  return n.toLocaleString()
+  // 紧凑计数随语言本地化：zh/ja 系显示「1.2万」，en 显示「1.2K/M」
+  return new Intl.NumberFormat(locale.value, { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 }
 
 function formatTime(iso: string | null): string {
@@ -140,32 +165,27 @@ const characterDisplayCount = ref(20)
 const topCharacters = computed(() => characters.value.slice(0, characterDisplayCount.value))
 const hasMoreCharacters = computed(() => characterDisplayCount.value < characters.value.length)
 
+// 预映射每行的展示字段，避免模板里每行重复 5 次 Map 查找与 i18n 解析
+const topCharacterRows = computed(() => topCharacters.value.map((item) => {
+  const character = getCharacterFromCode(item.code)
+  return {
+    item,
+    isLink: !!character,
+    characterId: character?.id ?? '',
+    thumb: character ? getCharacterThumb(item.code) : null,
+    name: getCharacterName(item.code),
+    series: getCharacterSeries(item.code),
+    accent: getCharacterAccent(item.code),
+  }
+}))
+
 function loadMoreCharacters() {
   characterDisplayCount.value = Math.min(characterDisplayCount.value + 20, characters.value.length)
 }
 
 onMounted(async () => {
-  try {
-    const [overviewRes, archetypesRes, charactersRes] = await Promise.all([
-      fetchStatsJson('/api/stats/overview'),
-      fetchStatsJson('/api/stats/archetypes'),
-      fetchStatsJson('/api/stats/characters'),
-    ])
-
-    const overviewJson = overviewRes
-    const archetypesJson = archetypesRes
-    const charactersJson = charactersRes
-
-    if (overviewJson.data) overview.value = overviewJson.data
-    if (archetypesJson.data?.items) archetypes.value = archetypesJson.data.items
-    if (charactersJson.data?.items) characters.value = charactersJson.data.items
-    updatedAt.value = overviewJson.updatedAt ?? archetypesJson.updatedAt ?? charactersJson.updatedAt ?? null
-  } catch (err) {
-    console.error('Failed to load stats:', err)
-    loadError.value = getLocaleLoadErrorMessage()
-  } finally {
-    loading.value = false
-  }
+  await loadStats()
+  loading.value = false
 })
 </script>
 
@@ -200,7 +220,10 @@ onMounted(async () => {
     <template v-else>
       <section v-if="loadError" class="stats-section" v-reveal>
         <div class="container">
-          <div class="error-card">{{ loadError }}</div>
+          <div class="error-card">
+            {{ loadError }}
+            <button type="button" class="error-retry" @click="retryLoad">{{ t('stats.retry', undefined, '重试') }}</button>
+          </div>
         </div>
       </section>
 
@@ -232,37 +255,37 @@ onMounted(async () => {
 
           <div class="ranking-list">
             <component
-              :is="getCharacterFromCode(item.code) ? 'RouterLink' : 'div'"
-              v-for="(item, index) in topCharacters"
-              :key="item.code"
+              :is="row.isLink ? 'RouterLink' : 'div'"
+              v-for="(row, index) in topCharacterRows"
+              :key="row.item.code"
               class="ranking-row character-row"
-              :to="getCharacterFromCode(item.code) ? { path: '/result', query: { character: getCharacterFromCode(item.code)?.id } } : undefined"
+              :to="row.isLink ? { path: '/result', query: { character: row.characterId } } : undefined"
               style="text-decoration: none; color: inherit; display: flex;"
             >
               <span class="ranking-index">{{ index + 1 }}</span>
               <img
-                v-if="getCharacterThumb(item.code)"
-                :src="getCharacterThumb(item.code) ?? undefined"
-                :alt="getCharacterName(item.code)"
+                v-if="row.thumb"
+                :src="row.thumb"
+                :alt="row.name"
                 class="ranking-avatar"
               />
               <div v-else class="ranking-avatar placeholder"></div>
               <div class="ranking-info">
                 <div class="ranking-header">
-                  <span class="ranking-name">{{ getCharacterName(item.code) }}</span>
-                  <span class="ranking-percent">{{ item.percent.toFixed(1) }}%</span>
+                  <span class="ranking-name">{{ row.name }}</span>
+                  <span class="ranking-percent">{{ row.item.percent.toFixed(1) }}%</span>
                 </div>
-                <span class="ranking-subtitle">{{ getCharacterSeries(item.code) || item.code }}</span>
+                <span class="ranking-subtitle">{{ row.series || row.item.code }}</span>
                 <div class="ranking-bar-track">
                   <div
                     class="ranking-bar-fill"
                     :style="{
-                      width: `${Math.max(item.percent, 1)}%`,
-                      backgroundColor: getCharacterAccent(item.code),
+                      width: `${Math.max(row.item.percent, 1)}%`,
+                      backgroundColor: row.accent,
                     }"
                   ></div>
                 </div>
-                <span class="ranking-count">{{ formatNumber(item.count) }}</span>
+                <span class="ranking-count">{{ formatNumber(row.item.count) }}</span>
               </div>
             </component>
           </div>
@@ -333,18 +356,18 @@ onMounted(async () => {
 
 /* Hero */
 .stats-hero {
-  padding: 6rem 0 4rem;
+  padding: 4rem 0 3rem;
   text-align: center;
-  background: linear-gradient(135deg, #e8f5ee 0%, #f0f4ff 100%); /* Revert to soft pastel gradient */
+  background: #ffffff;
   color: #1a1a2e;
-  border-bottom: none;
+  border-bottom: 1px solid #eef2f4;
 }
 .stats-page-title {
   margin: 0;
-  font-size: clamp(2rem, 5vw, 3rem);
+  font-size: clamp(1.8rem, 4.5vw, 2.5rem);
   font-weight: 800;
-  color: #1a1a2e;
-  letter-spacing: -0.5px;
+  color: #1f2a32;
+  letter-spacing: -0.03em;
 }
 .stats-page-subtitle {
   margin: 1.2rem auto 0;
@@ -385,16 +408,13 @@ onMounted(async () => {
 }
 .overview-card {
   background: #fff;
-  border-radius: 16px;
-  padding: 2.5rem 1.5rem;
+  border-radius: 12px;
+  padding: 2rem 1.25rem;
   text-align: center;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
-  border: 1px solid #edf1f4;
-  transition: transform 0.2s, box-shadow 0.2s;
+  border: 1px solid #e3e8ee;
 }
 .overview-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  border-color: #c8d2d9;
 }
 .overview-value {
   display: block;
@@ -405,12 +425,11 @@ onMounted(async () => {
 }
 .overview-label {
   display: block;
-  margin-top: 0.8rem;
-  font-size: 1rem;
+  margin-top: 0.6rem;
+  font-size: 0.82rem;
   font-weight: 600;
-  color: #88939e;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  color: #6b7680;
+  letter-spacing: 0.04em;
 }
 
 /* Ranking list */
@@ -424,17 +443,14 @@ onMounted(async () => {
 .ranking-row {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 1.1rem;
   background: #fff;
-  border-radius: 16px; /* softer border radius */
-  padding: 1.25rem 1.5rem;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04); /* slightly softer/wider shadow */
-  border: 1px solid #edf1f4; /* clearer border */
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border-radius: 12px;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid #e3e8ee;
 }
 .ranking-row:hover {
-  transform: translateY(-2px); /* classic SaaS hover */
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+  border-color: #c8d2d9;
 }
 
 .ranking-index {
@@ -443,7 +459,7 @@ onMounted(async () => {
   text-align: center;
   font-size: 1.2rem;
   font-weight: 800;
-  color: #d1d8df;
+  color: #8a97a5;
 }
 .ranking-row:nth-child(1) .ranking-index { color: #e5b540; font-size: 1.4rem; } 
 .ranking-row:nth-child(2) .ranking-index { color: #aab0b3; font-size: 1.3rem; } 
@@ -460,8 +476,8 @@ onMounted(async () => {
   box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 .ranking-avatar.placeholder {
-  background: linear-gradient(135deg, #e8edf2, #f5f8fb);
-  border: none;
+  background: #f0f4f8;
+  border: 1px solid #e3e8ee;
 }
 
 .ranking-info {
@@ -511,7 +527,7 @@ onMounted(async () => {
 .ranking-count {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #aeb6bf;
+  color: #6b7680;
   margin-top: 0.4rem;
   display: flex;
   justify-content: flex-end;
@@ -605,11 +621,26 @@ onMounted(async () => {
   max-width: 800px;
   margin: 0 auto;
 }
+
+.error-retry {
+  display: inline-block;
+  margin-left: 12px;
+  border: 1px solid #33a474;
+  background: transparent;
+  color: #33a474;
+  border-radius: 999px;
+  padding: 6px 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.error-retry:hover {
+  background: #33a474;
+  color: #fff;
+}
 .skeleton-line {
   border-radius: 4px;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+  background: #edf1f5;
 }
 .skeleton-line.wide { height: 2.5rem; width: 60%; margin: 0 auto 1rem; border-radius: 8px; }
 .skeleton-line.narrow { height: 1rem; width: 40%; margin: 0 auto; border-radius: 4px; }

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dev
   pull_request:
 
 jobs:
@@ -26,6 +27,18 @@ jobs:
 
       - name: Validate character data
         run: npm run validate:data
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Typecheck Pages Functions
+        run: npx tsc -p tsconfig.functions.json
+
+      - name: Typecheck cron-worker
+        run: npx tsc -p cron-worker/tsconfig.json
+
+      - name: Verify D1 migrations on a fresh database
+        run: npx wrangler d1 migrations apply acgti-stats --local
 
       - name: Build
         run: npm run build

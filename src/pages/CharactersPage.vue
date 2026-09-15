@@ -2,11 +2,11 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import { useQuiz } from '../composables/useQuiz'
-import { useI18n } from '../i18n'
+import { ensureCharacterMessages, useI18n } from '../i18n'
 import { useSeo } from '../composables/useSeo'
 import {
+  getHiddenCharacterLabel,
   getHiddenCharacterOrder,
-  getHiddenCharacterTitle,
   getLocalizedCharacterName,
   getLocalizedCharacterSeries,
   isHiddenCharacter,
@@ -14,9 +14,10 @@ import {
 import { getCharacterRarityMeta } from '../utils/characterRarity'
 import type { CharacterMatch } from '../types/quiz'
 
+const { t: seoCharsT } = useI18n()
 useSeo({
-  title: 'ACGTI 角色库 - 105+ 二次元角色原型',
-  description: '浏览 ACGTI 官网角色库，包含 105+ 位二次元角色原型。每角色均基于 MBTI 十六型人格映射，展示性格维度、稀有度和角色来源。',
+  title: computed(() => seoCharsT('seo.charactersTitle')),
+  description: computed(() => seoCharsT('seo.charactersDesc')),
   path: '/characters',
 })
 
@@ -30,10 +31,11 @@ const sortDirection = ref<SortDirection>('asc')
 const isSortMenuOpen = ref(false)
 const sortDropdownRef = ref<HTMLElement | null>(null)
 
-// 进入图鉴页时才加载角色数据
-onMounted(() => {
-  void ensureData()
+// 进入图鉴页时才加载角色数据与角色多语言文案（await 保证卡片渲染时文案已就绪，
+// 避免非中文用户先闪现简体中文标题且不自动恢复）
+onMounted(async () => {
   document.addEventListener('click', closeSortMenu)
+  await Promise.all([ensureData(), ensureCharacterMessages()])
 })
 
 onUnmounted(() => {
@@ -221,16 +223,15 @@ function compareByLocalizedName(left: CharacterMatch, right: CharacterMatch) {
             </button>
 
             <transition name="dropdown">
-              <ul class="sort-dropdown-menu" v-show="isSortMenuOpen" role="listbox">
+              <ul class="sort-dropdown-menu" v-show="isSortMenuOpen">
                 <li
                   v-for="option in sortOptions"
                   :key="option.value"
-                  role="option"
-                  :aria-selected="option.value === sortField"
                   :class="{ active: option.value === sortField }"
-                  @click.stop="selectSortField(option.value)"
                 >
-                  {{ option.label }}
+                  <button type="button" class="sort-option-btn" :aria-pressed="option.value === sortField" @click="selectSortField(option.value)">
+                    {{ option.label }}
+                  </button>
                 </li>
               </ul>
             </transition>
@@ -295,7 +296,7 @@ function compareByLocalizedName(left: CharacterMatch, right: CharacterMatch) {
           <h2 class="card-name">{{ getLocalizedCharacterName(character, locale) }}</h2>
           <p class="card-source">{{ getLocalizedCharacterSeries(character, locale) }}</p>
           <p class="card-title">
-            {{ isHiddenCharacter(character) ? getHiddenCharacterTitle(locale, character) : t('characters.' + character.id + '.title', undefined, character.title) }}
+            {{ isHiddenCharacter(character) ? getHiddenCharacterLabel(character, locale) : t('characters.' + character.id + '.title', undefined, character.title) }}
           </p>
         </div>
       </component>
@@ -418,8 +419,17 @@ function compareByLocalizedName(left: CharacterMatch, right: CharacterMatch) {
 }
 
 .sort-dropdown-menu li {
-  padding: 0.72rem 0.9rem;
   border-radius: 12px;
+}
+
+.sort-option-btn {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.72rem 0.9rem;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
   color: #4d5c66;
   font-weight: 700;
   line-height: 1.3;
@@ -427,12 +437,12 @@ function compareByLocalizedName(left: CharacterMatch, right: CharacterMatch) {
   transition: background-color 0.16s ease, color 0.16s ease;
 }
 
-.sort-dropdown-menu li:hover {
+.sort-option-btn:hover {
   background: #f4f8f6;
   color: #2c3c45;
 }
 
-.sort-dropdown-menu li.active {
+.sort-dropdown-menu li.active .sort-option-btn {
   background: #e8f4ee;
   color: #2d7f5e;
 }
@@ -489,20 +499,17 @@ function compareByLocalizedName(left: CharacterMatch, right: CharacterMatch) {
 .character-card {
   display: flex;
   flex-direction: column;
-  background: white;
-  border-radius: 16px;
+  background: #ffffff;
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border: 1px solid #e3e8ee;
+  transition: border-color 0.2s ease;
   text-decoration: none;
   color: inherit;
-  border: 2px solid transparent;
 }
 
 .character-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
-  border-color: var(--accent-color, #42b883);
+  border-color: #c8d2d9;
 }
 
 .character-card--hidden {
@@ -510,21 +517,19 @@ function compareByLocalizedName(left: CharacterMatch, right: CharacterMatch) {
 }
 
 .character-card--hidden:hover {
-  transform: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  border-color: transparent;
+  border-color: #e3e8ee;
 }
 
 .card-image-wrap {
   width: 100%;
   aspect-ratio: 1;
-  background-color: #f8f9fa;
+  background: #f8f9fa;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   overflow: hidden;
   position: relative;
-  background: linear-gradient(to bottom, #f8f9fa, color-mix(in srgb, var(--accent-color, #e9ecef) 20%, transparent));
+  border-bottom: 1px solid #eef2f4;
 }
 
 .card-image {
@@ -555,7 +560,7 @@ function compareByLocalizedName(left: CharacterMatch, right: CharacterMatch) {
 }
 
 .character-card:hover .card-image {
-  transform: scale(1.05);
+  transform: none;
 }
 
 .character-card--hidden:hover .card-image {
@@ -581,14 +586,15 @@ function compareByLocalizedName(left: CharacterMatch, right: CharacterMatch) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2rem;
-  font-weight: 800;
-  font-size: 0.85rem;
+  min-height: 1.9rem;
+  font-weight: 700;
+  font-size: 0.82rem;
   line-height: 1.2;
-  color: var(--accent-color, #42b883);
-  background: color-mix(in srgb, var(--accent-color, #42b883) 15%, transparent);
-  padding: 0.2rem 0.6rem;
-  border-radius: 100px;
+  color: #3a4a56;
+  background: #eef2f4;
+  border: 1px solid #dde5ea;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
   white-space: nowrap;
 }
 
